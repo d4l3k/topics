@@ -1,0 +1,9 @@
+*.json
+*.zip
+*.vec
+*.lmdb
+__pycache__/
+
+.ipynb_checkpoints
+*.png
+*.hdf5
