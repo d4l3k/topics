@@ -16,15 +16,18 @@ from keras.callbacks import ModelCheckpoint
 
 import vectors
 
+BATCH_SIZE = 32
+DIMS = 300
+
 def create_model():
-    g = Input(shape=(None, 300,), dtype=np.float, name='g')
+    g = Input(shape=(None, DIMS,), dtype=np.float, name='g')
     lstm = LSTM(128)(g)
-    lt = Dense(300)(lstm)
+    lt = Dense(DIMS)(lstm)
 
-    dpos = Input(shape=(300,), dtype=np.float, name='dpos')
-    dneg = Input(shape=(300,), dtype=np.float, name='dneg')
+    dpos = Input(shape=(DIMS,), dtype=np.float, name='dpos')
+    dneg = Input(shape=(DIMS,), dtype=np.float, name='dneg')
 
-    ld = Dense(300, activation='softmax')
+    ld = Dense(DIMS, activation='softmax')
 
     ldpos = ld(dpos)
     ldneg = ld(dneg)
@@ -33,12 +36,12 @@ def create_model():
     lspos = dot([lt, ldpos])
     lsneg = dot([lt, ldneg])
 
-    omega = Input(tensor=K.constant([0.5]), name='omega')
-    zero = Input(tensor=K.constant([0.0]), name='zero')
+    omega = Input(tensor=K.repeat_elements(K.constant([[0.5]]), BATCH_SIZE, 1), name='omega')
+    zero = Input(tensor=K.repeat_elements(K.constant([[0.0]]), BATCH_SIZE, 1), name='zero')
 
     cost = maximum([
         zero,
-        add([subtract([omega, lspos]), lsneg])
+        add([lsneg, subtract([omega, lspos])])
     ], name='val_loss')
 
     def loss(y_true, y_pred):
@@ -85,7 +88,7 @@ def get_negative_word(all_words, neg_words):
     raise "couldn't find valid word"
 
 class DataGenerator(keras.utils.Sequence):
-    def __init__(self, batch_size=32, shuffle=True, dims=300):
+    def __init__(self, batch_size=BATCH_SIZE, shuffle=True, dims=DIMS):
         self.dims = dims
         self.batch_size = batch_size
         self.shuffle = shuffle
