@@ -1,6 +1,7 @@
 import io
 import numpy as np
 from tqdm import tqdm
+from nltk.corpus import stopwords
 import re
 
 import os
@@ -9,8 +10,15 @@ import os
 import lmdb
 
 vector_file = 'wiki-news-300d-1M.vec'
+DIMS = 300
 
-db = lmdb.open('vectors.lmdb', map_size=10000000000, max_readers=100)
+db = lmdb.open('vectors.lmdb', map_size=10000000000, max_readers=10000)
+
+stop_words = set(stopwords.words('english'))
+def is_stopword(w):
+    w = w.lower()
+    return w in stop_words or not re.match(r"[a-zA-Z]+", w)
+
 
 def load_words(fname=vector_file):
     out = []
@@ -19,7 +27,11 @@ def load_words(fname=vector_file):
         for line in tqdm(fin, total=n, desc='load_words'):
             tokens = line.split(' ', 1)
             key = tokens[0]
+            if is_stopword(key):
+                continue
             out.append(key)
+
+    print('Loaded {} words!'.format(len(out)))
     return out
 
 def load_vectors(fname=vector_file):
@@ -33,15 +45,25 @@ def load_vectors(fname=vector_file):
                 txn.put(key.encode(), values.tobytes())
 
 def weights(word):
-    return weights_arr([word])[0]
+    return weights_arr([word]) #[0]
 
-def weights_arr(words, dim=300):
+def weights_arr(words, dims=DIMS):
+    out = np.zeros(dims)
+    with db.begin(buffers=True) as txn:
+        for word in words:
+            buf = txn.get(word.lower().encode())
+            if not buf is None:
+                out += np.frombuffer(buf, dtype=np.float)
+
+    return out
+
+def weights_old_arr(words, dims=DIMS):
     out = []
     with db.begin(buffers=True) as txn:
         for word in words:
             buf = txn.get(word.lower().encode())
             if buf is None:
-                out.append(np.zeros(dim))
+                out.append(np.zeros(dims))
             else:
                 out.append(np.frombuffer(buf, dtype=np.float))
 

@@ -6,28 +6,46 @@ import numpy as np
 from tqdm import tqdm
 
 import keras.utils
-from keras.models import Sequential, Model
+from keras.models import Sequential, Model, load_model
 from keras.layers import (
-    Dense, Dropout, Input, Embedding, LSTM, GRU, maximum, Dot, add, subtract
+    Dense, Dropout, Input, Embedding, LSTM, GRU, maximum, Dot, add, subtract,
+    Lambda,
 )
 from keras import backend as K
 from keras.utils import plot_model
 from keras.callbacks import ModelCheckpoint
+import keras.losses
 
 import vectors
 
-BATCH_SIZE = 32
-DIMS = 300
+DIMS = vectors.DIMS
+BATCH_SIZE = 100
+MODEL_NAME = 'weights.hdf5'
+
+def load_trained():
+    model = create_model()
+    model.load_weights(MODEL_NAME)
+
+    lt = Model(inputs=model.get_layer('g').input,
+            outputs=model.get_layer('lt').output)
+    ld = Model(inputs=model.get_layer('dpos').input,
+            outputs=model.get_layer('ld').get_output_at(0))
+    return lt, ld
+
+def normalize(weights):
+    return weights/K.sum(weights, axis=1, keepdims=True)
 
 def create_model():
-    g = Input(shape=(None, DIMS,), dtype=np.float, name='g')
-    lstm = LSTM(128)(g)
-    lt = Dense(DIMS)(lstm)
+    g = Input(shape=(DIMS,), dtype=np.float, name='g')
+    #lstm = LSTM(300)(g)
+    #intermediate = Dense(DIMS)(g)
+    lt = Dense(DIMS, activation='sigmoid', name='lt')(g)
+    #lt = Lambda(normalize, name='lt')(lt_raw)
 
     dpos = Input(shape=(DIMS,), dtype=np.float, name='dpos')
     dneg = Input(shape=(DIMS,), dtype=np.float, name='dneg')
 
-    ld = Dense(DIMS, activation='softmax')
+    ld = Dense(DIMS, activation='softmax', name='ld')
 
     ldpos = ld(dpos)
     ldneg = ld(dneg)
@@ -48,6 +66,11 @@ def create_model():
         return y_pred
 
     model = Model(inputs=[g, dpos, dneg, omega, zero], outputs=[cost])
+
+    #optimizer = optimizers.Adam()
+    # GRU, loss = 1199
+    #optimizer = optimizers.Adam(lr=0.0001)
+
     model.compile(optimizer='adam', loss=loss, metrics=['mae', 'acc'])
     return model
 
@@ -57,7 +80,7 @@ def build_example_index(fname=example_dataset_name):
     indexes = []
     with tqdm(desc='build_example_index') as pbar:
         with io.open(fname, 'r', newline='\n') as fin:
-            while fin.readline():
+            while len(fin.readline()) >= 4:
                 indexes.append(fin.tell())
                 pbar.update()
 
@@ -72,8 +95,11 @@ def fetch_examples(indexes, fname=example_dataset_name):
             try:
                 data = json.loads(line)
             except Exception as e:
-                raise RuntimeError('read json error: {}, {}\n{}'.format(i,line,
-                    e))
+                print('read json error: {}, {}\n{}'.format(i,line, e))
+                # TODO: figure out why this is happening
+                fin.seek(0)
+                line = fin.readline()
+                data = json.loads(line)
 
             out.append(data["text"])
 
@@ -98,7 +124,7 @@ class DataGenerator(keras.utils.Sequence):
         self.on_epoch_end()
 
     def __len__(self):
-        return min(int(np.floor(len(self.indexes) / self.batch_size)), 1000)
+        return min(int(np.floor(len(self.indexes) / self.batch_size)), 10000000)
 
     def __getitem__(self, index):
         indexes = self.indexes[index*self.batch_size:(index+1)*self.batch_size]
@@ -115,8 +141,9 @@ class DataGenerator(keras.utils.Sequence):
     def __data_generation(self, indexes):
         examples = fetch_examples(indexes)
         sentences = [vectors.split_sentence(s) for s in examples]
-        max_len = max([len(s) for s in sentences])
-        weights = np.zeros((len(indexes), max_len, self.dims))
+        #max_len = max([len(s) for s in sentences])
+        #weights = np.zeros((len(indexes), max_len, self.dims))
+        weights = np.zeros((len(indexes), self.dims))
         dpos = np.zeros((len(indexes), self.dims))
         dneg = np.zeros((len(indexes), self.dims))
 
@@ -125,7 +152,7 @@ class DataGenerator(keras.utils.Sequence):
         for i, example in enumerate(examples):
             words = sentences[i]
             eweights = vectors.weights_arr(words)
-            weights[i, :len(eweights), :] = eweights
+            weights[i, :] = eweights
             dpos[i, :] = random.choice(eweights)
             dneg[i, :] = vectors.weights(get_negative_word(self.words, words))
 
@@ -138,7 +165,7 @@ class DataGenerator(keras.utils.Sequence):
 def train_model(model):
     training_generator = DataGenerator()
     checkpointer = ModelCheckpoint(
-        filepath='weights.hdf5',
+        filepath=MODEL_NAME,
         verbose=1,
         save_best_only=True,
         monitor='loss',
