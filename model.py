@@ -54,16 +54,16 @@ def create_model():
     lspos = dot([lt, ldpos])
     lsneg = dot([lt, ldneg])
 
-    omega = Input(tensor=K.repeat_elements(K.constant([[0.5]]), BATCH_SIZE, 1), name='omega')
-    zero = Input(tensor=K.repeat_elements(K.constant([[0.0]]), BATCH_SIZE, 1), name='zero')
+    omega = Input(tensor=K.repeat_elements(K.constant([[1.0]]), BATCH_SIZE, 0), name='omega')
+    zero = Input(tensor=K.repeat_elements(K.constant([[0.0]]), BATCH_SIZE, 0), name='zero')
 
     cost = maximum([
         zero,
         add([lsneg, subtract([omega, lspos])])
     ], name='val_loss')
 
-    def loss(y_true, y_pred):
-        return y_pred
+    #def loss(y_true, y_pred):
+    #    return y_pred
 
     model = Model(inputs=[g, dpos, dneg, omega, zero], outputs=[cost])
 
@@ -71,7 +71,9 @@ def create_model():
     # GRU, loss = 1199
     #optimizer = optimizers.Adam(lr=0.0001)
 
-    model.compile(optimizer='adam', loss=loss, metrics=['mae', 'acc'])
+    model.compile(optimizer='adam', loss='mean_squared_error', metrics=['mae', 'acc'])
+    print(model.summary())
+
     return model
 
 example_dataset_name = 'yelp_academic_dataset_review.json'

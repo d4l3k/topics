@@ -32,9 +32,12 @@ class Index():
         embedding = predict.sentence_embedding(sentence)
         print('embedding {}'.format(embedding))
         scores, indexes = self.index.search(embedding, k)
-        return [
+        topics = [
             self.words[i] for i in indexes[0]
-        ], scores, indexes
+        ]
+        topic_embeddings = predict.topic_embeddings(topics)
+        print(np.dot(topic_embeddings, np.transpose(embedding)))
+        return topics, scores, indexes
 
 
 if __name__ == "__main__":
